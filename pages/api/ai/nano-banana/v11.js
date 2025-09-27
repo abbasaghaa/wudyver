@@ -1,12 +1,52 @@
 import axios from "axios";
-import crypto from "crypto";
+import FormData from "form-data";
 import apiConfig from "@/configs/apiConfig";
+import SpoofHead from "@/lib/spoof-head";
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const wudysoftApiClient = axios.create({
   baseURL: `https://${apiConfig.DOMAIN_URL}/api`
 });
 class WudysoftAPI {
   constructor() {
     this.client = wudysoftApiClient;
+  }
+  async createEmail() {
+    try {
+      console.log("Proses: Membuat email sementara...");
+      const response = await this.client.get("/mails/v9", {
+        params: {
+          action: "create"
+        }
+      });
+      console.log("Proses: Email berhasil dibuat");
+      return response.data?.email;
+    } catch (error) {
+      console.error(`[ERROR] Gagal membuat email: ${error.message}`);
+      throw error;
+    }
+  }
+  async checkMessages(email) {
+    try {
+      console.log(`Proses: Mengecek pesan untuk email ${email}...`);
+      const response = await this.client.get("/mails/v9", {
+        params: {
+          action: "message",
+          email: email
+        }
+      });
+      const messages = response.data?.data || [];
+      if (messages.length > 0) {
+        const textContent = messages[0]?.text_content;
+        if (textContent) {
+          const verifyMatch = textContent.match(/https:\/\/nanobanana\.art\/api\/auth\/verify-email\?token=([a-zA-Z0-9.\-_]+)/);
+          return verifyMatch ? verifyMatch[0] : null;
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error(`[ERROR] Gagal memeriksa pesan: ${error.message}`);
+      return null;
+    }
   }
   async createPaste(title, content) {
     try {
@@ -17,9 +57,9 @@ class WudysoftAPI {
           content: content
         }
       });
-      return response.data?.key || null;
+      return response.data?.key;
     } catch (error) {
-      console.error(`[ERROR] Gagal dalam 'WudysoftAPI.createPaste': ${error.message}`);
+      console.error(`[ERROR] Gagal membuat paste: ${error.message}`);
       throw error;
     }
   }
@@ -31,9 +71,9 @@ class WudysoftAPI {
           key: key
         }
       });
-      return response.data?.content || null;
+      return response.data?.content;
     } catch (error) {
-      console.error(`[ERROR] Gagal dalam 'WudysoftAPI.getPaste' untuk kunci ${key}: ${error.message}`);
+      console.error(`[ERROR] Gagal mengambil paste: ${error.message}`);
       return null;
     }
   }
@@ -46,7 +86,7 @@ class WudysoftAPI {
       });
       return response.data || [];
     } catch (error) {
-      console.error(`[ERROR] Gagal dalam 'WudysoftAPI.listPastes': ${error.message}`);
+      console.error(`[ERROR] Gagal mengambil daftar paste: ${error.message}`);
       return [];
     }
   }
@@ -58,366 +98,340 @@ class WudysoftAPI {
           key: key
         }
       });
-      return response.data || null;
+      return response.data ? true : false;
     } catch (error) {
-      console.error(`[ERROR] Gagal dalam 'WudysoftAPI.delPaste' untuk kunci ${key}: ${error.message}`);
+      console.error(`[ERROR] Gagal menghapus paste: ${error.message}`);
       return false;
     }
   }
-  async createEmail() {
-    try {
-      const response = await this.client.get("/mails/v9", {
-        params: {
-          action: "create"
-        }
-      });
-      return response.data?.email;
-    } catch (error) {
-      console.error(`[ERROR] Gagal dalam 'WudysoftAPI.createEmail': ${error.message}`);
-      throw error;
-    }
-  }
-  async checkMessages(email) {
-    try {
-      const response = await this.client.get("/mails/v9", {
-        params: {
-          action: "message",
-          email: email
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error(`[ERROR] Gagal dalam 'WudysoftAPI.checkMessages' untuk email ${email}: ${error.message}`);
-      return null;
-    }
-  }
-  async extractVerificationLink(email) {
-    try {
-      const messages = await this.checkMessages(email);
-      if (!messages?.data?.[0]?.text_content) {
-        return null;
-      }
-      const textContent = messages.data[0].text_content;
-      const verifyLinkMatch = textContent.match(/https:\/\/nanobanana\.art\/api\/auth\/verify-email\?token=[^\s]+/);
-      return verifyLinkMatch ? verifyLinkMatch[0] : null;
-    } catch (error) {
-      console.error(`[ERROR] Gagal mengekstrak link verifikasi: ${error.message}`);
-      return null;
-    }
-  }
 }
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-class Sockvue {
+class NanoBananaAPI {
   constructor() {
-    this.wudysoft = new WudysoftAPI();
-    this.token = null;
-    this.sessionCookies = null;
-  }
-  random() {
-    return Math.random().toString(36).substring(2);
-  }
-  generatePassword() {
-    return this.random() + "@A1";
-  }
-  generateDeviceFingerprint() {
-    return crypto.randomBytes(16).toString("hex");
-  }
-  createNanoBananaClient() {
-    return axios.create({
-      baseURL: "https://nanobanana.art/api",
+    this.api = axios.create({
+      baseURL: "https://nanobanana.art",
       headers: {
-        accept: "*/*",
+        accept: "application/json, text/plain, */*",
         "accept-language": "id-ID",
         "content-type": "application/json",
         origin: "https://nanobanana.art",
-        priority: "u=1, i",
-        "sec-ch-ua": '"Chromium";v="127", "Not)A;Brand";v="99", "Microsoft Edge Simulate";v="127", "Lemur";v="127"',
-        "sec-ch-ua-mobile": "?1",
-        "sec-ch-ua-platform": '"Android"',
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
+        referer: "https://nanobanana.art/",
         "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36",
-        "x-device-fingerprint": this.generateDeviceFingerprint(),
-        "x-initial-landing-page": "https://nanobanana.art/ai-image-effects/ai-figure-generator",
-        "x-initial-referrer": "https://www.google.com/"
+        ...SpoofHead()
       }
     });
+    this.wudysoft = new WudysoftAPI();
+  }
+  _random() {
+    return Math.random().toString(36).substring(2, 12);
+  }
+  async _getSessionFromKey(key) {
+    console.log(`Proses: Memuat sesi dari kunci: ${key}`);
+    const savedSession = await this.wudysoft.getPaste(key);
+    if (!savedSession) {
+      throw new Error(`Sesi dengan kunci "${key}" tidak ditemukan`);
+    }
+    try {
+      const sessionData = JSON.parse(savedSession);
+      const token = sessionData.token;
+      const sessionToken = sessionData.session_token;
+      if (!token || !sessionToken) {
+        throw new Error("Token tidak valid di sesi yang tersimpan");
+      }
+      console.log("Proses: Sesi berhasil dimuat");
+      return {
+        token: token,
+        sessionToken: sessionToken
+      };
+    } catch (e) {
+      throw new Error(`Gagal memuat sesi: ${e.message}`);
+    }
+  }
+  async _pollVerification(email, maxAttempts = 60) {
+    console.log("Proses: Menunggu link verifikasi...");
+    for (let i = 0; i < maxAttempts; i++) {
+      const verifyLink = await this.wudysoft.checkMessages(email);
+      if (verifyLink) {
+        console.log("Proses: Link verifikasi ditemukan");
+        return verifyLink;
+      }
+      console.log(`Proses: Menunggu 3 detik... (${i + 1}/${maxAttempts})`);
+      await sleep(3e3);
+    }
+    throw new Error("Timeout: Link verifikasi tidak ditemukan");
   }
   async register() {
     try {
-      console.log("Memulai proses registrasi Nano Banana...");
+      console.log("Proses: Mendaftarkan akun baru...");
       const email = await this.wudysoft.createEmail();
-      if (!email) throw new Error("Gagal mendapatkan email temporary");
-      console.log(`Email didapat: ${email}`);
-      const password = this.generatePassword();
-      const name = "User" + this.random().substring(0, 8);
-      const nanoClient = this.createNanoBananaClient();
-      const signupResponse = await nanoClient.post("/auth/sign-up/email", {
+      if (!email) throw new Error("Gagal membuat email");
+      console.log(`Proses: Email dibuat: ${email}`);
+      const password = `${this._random()}A1`;
+      const name = `User${this._random().substring(0, 6)}`;
+      const signupResponse = await this.api.post("/api/auth/sign-up/email", {
         email: email,
         password: password,
         name: name,
-        callbackURL: "/"
-      });
-      console.log("Registrasi awal berhasil, menunggu verifikasi email...");
-      let verifyLink = null;
-      for (let i = 0; i < 60; i++) {
-        console.log(`Menunggu email verifikasi (${i + 1}/60)...`);
-        verifyLink = await this.wudysoft.extractVerificationLink(email);
-        if (verifyLink) break;
-        await sleep(3e3);
-      }
-      if (!verifyLink) throw new Error("Gagal mendapatkan link verifikasi");
-      await axios.get(verifyLink, {
+        callbackURL: "/app/settings/general"
+      }, {
         headers: {
-          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-          "accept-language": "id-ID",
-          "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36"
+          "x-device-fingerprint": this._random() + this._random(),
+          "x-initial-landing-page": "https://nanobanana.art/"
         }
       });
-      console.log("Email berhasil diverifikasi");
-      const loginResponse = await nanoClient.post("/auth/sign-in/email", {
+      console.log("Proses: Pendaftaran berhasil, menunggu verifikasi...");
+      const verifyLink = await this._pollVerification(email);
+      const token = new URL(verifyLink).searchParams.get("token");
+      await this.api.get(`/api/auth/verify-email?token=${token}&callbackURL=/app/settings/general`);
+      console.log("Proses: Email terverifikasi");
+      const loginResponse = await this.api.post("/api/auth/sign-in/email", {
         mode: "password",
         email: email,
         password: password
       });
-      this.token = loginResponse.data?.token;
-      if (!this.token) throw new Error("Gagal mendapatkan token setelah login");
-      this.sessionCookies = `__Secure-better-auth.session_token=${this.token}; NEXT_LOCALE=en`;
-      console.log("Login berhasil, melakukan checkin...");
-      await nanoClient.post("/checkin", {}, {
-        headers: {
-          cookie: this.sessionCookies,
-          referer: "https://nanobanana.art/"
-        }
+      const userData = loginResponse.data;
+      if (!userData?.token) throw new Error("Gagal login setelah verifikasi");
+      console.log("Proses: Login berhasil");
+      const sessionToSave = JSON.stringify({
+        token: userData.token,
+        sessionToken: userData.token,
+        email: email,
+        user: userData.user
       });
-      const sessionData = {
-        token: this.token,
-        email: email,
-        password: password,
-        cookies: this.sessionCookies,
-        createdAt: new Date().toISOString()
-      };
-      const sessionTitle = `nanobanana-session-${this.random()}`;
-      const sessionKey = await this.wudysoft.createPaste(sessionTitle, JSON.stringify(sessionData));
-      if (!sessionKey) throw new Error("Gagal menyimpan session");
-      console.log(`Registrasi berhasil! Key: ${sessionKey}`);
+      const sessionKey = await this.wudysoft.createPaste(`nanobanana-${this._random()}`, sessionToSave);
+      if (!sessionKey) throw new Error("Gagal menyimpan sesi");
+      console.log(`-> Akun berhasil didaftarkan. Kunci: ${sessionKey}`);
+      await this.checkin({
+        key: sessionKey
+      });
       return {
-        success: true,
-        key: sessionKey,
-        email: email,
-        message: "Registrasi Nano Banana berhasil"
+        key: sessionKey
       };
     } catch (error) {
-      console.error("Error dalam registrasi:", error.response?.data || error.message);
-      throw error;
+      const errorMsg = error.response?.data?.message || error.message;
+      console.error(`Proses registrasi gagal: ${errorMsg}`);
+      throw new Error(errorMsg);
     }
   }
-  async loadSession(key) {
-    try {
-      const sessionData = await this.wudysoft.getPaste(key);
-      if (!sessionData) {
-        throw new Error("Session tidak ditemukan");
+  async _ensureValidSession({
+    key
+  }) {
+    if (key) {
+      try {
+        const session = await this._getSessionFromKey(key);
+        return {
+          ...session,
+          key: key
+        };
+      } catch (error) {
+        console.warn(`[PERINGATAN] ${error.message}. Mendaftarkan sesi baru...`);
       }
-      const session = JSON.parse(sessionData);
-      this.token = session.token;
-      this.sessionCookies = session.cookies;
-      return session;
-    } catch (error) {
-      console.error("Error loading session:", error.message);
-      throw error;
     }
+    console.log("Proses: Kunci tidak valid, mendaftarkan sesi baru...");
+    const newSession = await this.register();
+    if (!newSession?.key) throw new Error("Gagal mendaftarkan sesi baru");
+    const session = await this._getSessionFromKey(newSession.key);
+    return {
+      ...session,
+      key: newSession.key
+    };
   }
   async generate({
     key,
     prompt,
     imageUrl,
-    mode = "edit",
-    aspectRatio = "16:9"
+    ...rest
   }) {
     try {
-      if (!key) {
-        console.log("Key tidak ditemukan, mendaftarkan sesi baru secara otomatis...");
-        const registrationResult = await this.register();
-        key = registrationResult.key;
-        if (!key) {
-          throw new Error("Gagal mendaftarkan sesi baru. Proses dibatalkan.");
-        }
-      }
-      await this.loadSession(key);
-      const nanoClient = this.createNanoBananaClient();
-      const isUrl = s => typeof s === "string" && (s.startsWith("http://") || s.startsWith("https://"));
-      const isBase64 = s => {
-        if (typeof s !== "string") return false;
-        const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-        const coreBase64 = s.split(",").pop();
-        return base64Regex.test(coreBase64);
-      };
-      const getMimeTypeFromBuffer = buffer => {
-        if (buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255) {
-          return {
-            mime: "image/jpeg",
-            ext: "jpg"
-          };
-        }
-        if (buffer[0] === 137 && buffer[1] === 80 && buffer[2] === 78 && buffer[3] === 71) {
-          return {
-            mime: "image/png",
-            ext: "png"
-          };
-        }
-        return {
-          mime: "image/jpeg",
-          ext: "jpg"
-        };
-      };
-      const uploadedImageUrls = [];
+      const {
+        sessionToken,
+        key: currentKey
+      } = await this._ensureValidSession({
+        key: key
+      });
+      console.log("Proses: Membuat gambar...");
+      let inputImages = [];
       if (imageUrl) {
-        const images = Array.isArray(imageUrl) ? imageUrl : [imageUrl];
-        for (const imageInput of images) {
-          try {
-            let imageDataBuffer;
-            let contentType = null;
-            if (Buffer.isBuffer(imageInput)) {
-              console.log("Memproses input Buffer...");
-              imageDataBuffer = imageInput;
-            } else if (isBase64(imageInput)) {
-              console.log("Memproses input Base64...");
-              const parts = imageInput.split(",");
-              if (parts.length > 1 && parts[0].startsWith("data:")) {
-                contentType = parts[0].split(":")[1].split(";")[0];
-              }
-              imageDataBuffer = Buffer.from(parts.pop(), "base64");
-            } else if (isUrl(imageInput)) {
-              console.log(`Mengunduh gambar dari URL: ${imageInput}`);
-              const response = await axios.get(imageInput, {
-                responseType: "arraybuffer"
-              });
-              imageDataBuffer = response.data;
-              contentType = response.headers["content-type"];
-            } else {
-              console.warn("Format imageUrl tidak dikenali, item dilewati.");
-              continue;
-            }
-            let fileExtension;
-            if (!contentType || !contentType.startsWith("image/")) {
-              const typeInfo = getMimeTypeFromBuffer(imageDataBuffer);
-              contentType = typeInfo.mime;
-              fileExtension = typeInfo.ext;
-            } else {
-              fileExtension = contentType.split("/")[1] || "jpg";
-            }
-            console.log(`Content-Type yang digunakan: ${contentType}`);
-            const timestamp = Date.now();
-            const filename = `${timestamp}-${this.random()}.${fileExtension}`;
-            const signedUrlResponse = await nanoClient.post(`/uploads/signed-upload-url?bucket=images&path=%2F${filename}`, {}, {
-              headers: {
-                cookie: this.sessionCookies
-              }
-            });
-            const signedUrl = signedUrlResponse.data?.signedUrl;
-            if (!signedUrl) {
-              console.error("Gagal mendapatkan signed URL.");
-              continue;
-            }
-            await axios.put(signedUrl, imageDataBuffer, {
-              headers: {
-                "Content-Type": contentType,
-                "Content-Length": imageDataBuffer.length
-              }
-            });
-            const uploadedUrl = `https://nano-banana.s3.us-east-1.amazonaws.com/images//${filename}`;
-            uploadedImageUrls.push(uploadedUrl);
-            console.log(`Berhasil mengunggah gambar ke: ${uploadedUrl}`);
-          } catch (uploadError) {
-            console.error("Gagal memproses satu item gambar:", uploadError.message);
-          }
-        }
+        console.log("Proses: Mengunggah gambar...");
+        const uploadedUrls = await this._uploadImages(sessionToken, imageUrl);
+        inputImages = uploadedUrls;
       }
-      const generatePayload = {
+      const generateData = {
         prompt: prompt,
-        mode: mode,
-        aspectRatio: aspectRatio,
-        model: "nano-banana",
-        outputFormat: "jpeg",
-        enableTranslation: true,
-        promptUpsampling: false,
-        safetyTolerance: 2,
-        uploadCn: false
+        mode: imageUrl ? "edit" : "generate",
+        aspectRatio: rest.aspectRatio || "16:9",
+        model: rest.model || "nano-banana",
+        outputFormat: rest.outputFormat || "jpeg",
+        enableTranslation: rest.enableTranslation ?? true,
+        promptUpsampling: rest.promptUpsampling ?? false,
+        safetyTolerance: rest.safetyTolerance ?? 2,
+        uploadCn: rest.uploadCn ?? false,
+        inputImages: inputImages.length > 0 ? inputImages : undefined,
+        ...rest
       };
-      if (uploadedImageUrls.length > 0) {
-        generatePayload.inputImages = uploadedImageUrls;
-      }
-      const generateResponse = await nanoClient.post("/generate-image", generatePayload, {
+      const response = await this.api.post("/api/generate-image", generateData, {
         headers: {
-          cookie: this.sessionCookies
+          cookie: `__Secure-better-auth.session_token=${sessionToken}; NEXT_LOCALE=en`
         }
       });
-      const imageId = generateResponse.data?.data?.uuid;
-      if (!imageId) throw new Error("Gagal memulai proses generate");
-      console.log("Proses generate dimulai, menunggu hasil...");
-      let result = null;
-      for (let i = 0; i < 60; i++) {
-        await new Promise(resolve => setTimeout(resolve, 3e3));
-        const statusResponse = await nanoClient.post("/get-image", {
-          image_id: imageId
-        }, {
-          headers: {
-            cookie: this.sessionCookies
-          }
-        });
-        const imageData = statusResponse.data?.data;
-        if (imageData?.status === 3 && imageData?.image_url) {
-          result = imageData;
-          break;
-        } else if (imageData?.status === 2) {
-          console.log(`Masih memproses... (${i + 1}/30)`);
-        } else if (imageData?.status === 4) {
-          throw new Error("Generate gagal");
-        }
-      }
-      if (!result) throw new Error("Timeout menunggu hasil generate");
+      console.log("Proses: Generate task berhasil dibuat");
       return {
-        success: true,
-        image_url: result.image_url,
-        prompt: result.prompt,
-        id: result.uuid,
-        details: result
+        task_id: response.data?.data?.uuid,
+        key: currentKey
       };
     } catch (error) {
-      const errorMessage = error.response?.data?.message || error.message;
-      console.error("Error dalam proses generate:", errorMessage);
-      throw new Error(`Proses generate gagal: ${errorMessage}`);
+      const errorMsg = error.response?.data?.message || error.message;
+      console.error(`Proses generate gagal: ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+  }
+  async _uploadImages(sessionToken, imageUrl) {
+    const images = Array.isArray(imageUrl) ? imageUrl : [imageUrl];
+    const uploadedUrls = [];
+    for (const img of images) {
+      const timestamp = Date.now();
+      const filename = `${timestamp}-${this._random()}.${img.includes("jpeg") ? "jpg" : "png"}`;
+      const presignResponse = await this.api.post(`/api/uploads/signed-upload-url?bucket=images&path=%2F${filename}`, {}, {
+        headers: {
+          cookie: `__Secure-better-auth.session_token=${sessionToken}; NEXT_LOCALE=en`
+        }
+      });
+      const signedUrl = presignResponse.data?.signedUrl;
+      if (!signedUrl) throw new Error("Gagal mendapatkan signed URL");
+      let imageBuffer;
+      if (Buffer.isBuffer(img)) {
+        imageBuffer = img;
+      } else if (img.startsWith("http")) {
+        const response = await axios.get(img, {
+          responseType: "arraybuffer"
+        });
+        imageBuffer = Buffer.from(response.data);
+      } else if (img.startsWith("data:")) {
+        const base64Data = img.replace(/^data:image\/\w+;base64,/, "");
+        imageBuffer = Buffer.from(base64Data, "base64");
+      } else {
+        imageBuffer = Buffer.from(img, "base64");
+      }
+      await axios.put(signedUrl, imageBuffer, {
+        headers: {
+          "Content-Type": "image/png",
+          "Content-Length": imageBuffer.length
+        }
+      });
+      const finalUrl = signedUrl.split("?")[0];
+      uploadedUrls.push(finalUrl);
+      console.log(`Proses: Gambar berhasil diunggah: ${finalUrl}`);
+    }
+    return uploadedUrls;
+  }
+  async status({
+    key,
+    task_id,
+    ...rest
+  }) {
+    try {
+      const {
+        sessionToken,
+        key: currentKey
+      } = await this._ensureValidSession({
+        key: key
+      });
+      console.log(`Proses: Mengecek status task ${task_id}...`);
+      const response = await this.api.post("/api/get-image", {
+        image_id: task_id,
+        ...rest
+      }, {
+        headers: {
+          cookie: `__Secure-better-auth.session_token=${sessionToken}; NEXT_LOCALE=en`
+        }
+      });
+      console.log("Proses: Status berhasil diambil");
+      return {
+        ...response.data?.data,
+        key: currentKey
+      };
+    } catch (error) {
+      const errorMsg = error.response?.data?.message || error.message;
+      console.error(`Proses status gagal: ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+  }
+  async checkin({
+    key,
+    ...rest
+  }) {
+    try {
+      const {
+        sessionToken,
+        key: currentKey
+      } = await this._ensureValidSession({
+        key: key
+      });
+      console.log("Proses: Melakukan checkin...");
+      const response = await this.api.post("/api/checkin", {}, {
+        headers: {
+          cookie: `__Secure-better-auth.session_token=${sessionToken}; NEXT_LOCALE=en`
+        }
+      });
+      console.log("Proses: Checkin berhasil");
+      return {
+        ...response.data,
+        key: currentKey
+      };
+    } catch (error) {
+      const errorMsg = error.response?.data?.message || error.message;
+      console.error(`Proses checkin gagal: ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+  }
+  async del_user({
+    key,
+    ...rest
+  }) {
+    try {
+      const {
+        sessionToken
+      } = await this._ensureValidSession({
+        key: key
+      });
+      console.log("Proses: Menghapus user...");
+      const response = await this.api.post("/api/auth/delete-user", {}, {
+        headers: {
+          cookie: `__Secure-better-auth.session_token=${sessionToken}; NEXT_LOCALE=en`
+        }
+      });
+      console.log("Proses: User berhasil dihapus");
+      return response.data;
+    } catch (error) {
+      const errorMsg = error.response?.data?.message || error.message;
+      console.error(`Proses delete user gagal: ${errorMsg}`);
+      throw new Error(errorMsg);
     }
   }
   async list_key() {
     try {
+      console.log("Proses: Mengambil daftar kunci...");
       const allPastes = await this.wudysoft.listPastes();
-      const nanoKeys = allPastes.filter(paste => paste.title && paste.title.startsWith("nanobanana-session-")).map(paste => ({
-        key: paste.key,
-        title: paste.title,
-        created: paste.created_at
-      }));
-      return nanoKeys;
+      return allPastes.filter(paste => paste.title?.startsWith("nanobanana-")).map(paste => paste.key);
     } catch (error) {
-      console.error("Error listing keys:", error.message);
+      console.error(`Gagal mengambil daftar kunci: ${error.message}`);
       throw error;
     }
   }
   async del_key({
-    key
+    key,
+    ...rest
   }) {
+    if (!key) {
+      console.error("Kunci tidak disediakan");
+      return false;
+    }
     try {
-      if (!key) {
-        throw new Error("Key diperlukan");
-      }
-      const result = await this.wudysoft.delPaste(key);
-      return {
-        success: true,
-        message: `Key ${key} berhasil dihapus`
-      };
+      console.log(`Proses: Menghapus kunci: ${key}`);
+      const success = await this.wudysoft.delPaste(key);
+      console.log(success ? "Kunci berhasil dihapus" : "Gagal menghapus kunci");
+      return success;
     } catch (error) {
-      console.error("Error deleting key:", error.message);
+      console.error(`Error menghapus kunci: ${error.message}`);
       throw error;
     }
   }
@@ -426,50 +440,72 @@ export default async function handler(req, res) {
   const {
     action,
     ...params
-  } = req.method === "POST" ? req.body : req.query;
+  } = req.method === "GET" ? req.query : req.body;
   if (!action) {
     return res.status(400).json({
-      error: "Parameter 'action' wajib diisi. Pilihan: register, generate, list_key, del_key"
+      error: "Parameter 'action' wajib diisi."
     });
   }
-  const sockvue = new Sockvue();
+  const api = new NanoBananaAPI();
   try {
-    let result;
+    let response;
     switch (action) {
       case "register":
-        result = await sockvue.register();
+        response = await api.register();
         break;
       case "generate":
         if (!params.prompt) {
           return res.status(400).json({
-            error: "Parameter 'prompt' wajib untuk generate"
+            error: "Parameter 'prompt' wajib diisi untuk action 'generate'."
           });
         }
-        result = await sockvue.generate(params);
+        response = await api.generate(params);
+        break;
+      case "status":
+        if (!params.key || !params.task_id) {
+          return res.status(400).json({
+            error: "Parameter 'key' dan 'task_id' wajib diisi untuk action 'status'."
+          });
+        }
+        response = await api.status(params);
+        break;
+      case "checkin":
+        if (!params.key) {
+          return res.status(400).json({
+            error: "Parameter 'key' wajib diisi untuk action 'checkin'."
+          });
+        }
+        response = await api.checkin(params);
+        break;
+      case "del_user":
+        if (!params.key) {
+          return res.status(400).json({
+            error: "Parameter 'key' wajib diisi untuk action 'del_user'."
+          });
+        }
+        response = await api.del_user(params);
         break;
       case "list_key":
-        result = await sockvue.list_key();
+        response = await api.list_key();
         break;
       case "del_key":
         if (!params.key) {
           return res.status(400).json({
-            error: "Parameter 'key' wajib untuk del_key"
+            error: "Parameter 'key' wajib diisi untuk action 'del_key'."
           });
         }
-        result = await sockvue.del_key(params);
+        response = await api.del_key(params);
         break;
       default:
         return res.status(400).json({
-          error: `Action '${action}' tidak dikenali`
+          error: `Action tidak valid: ${action}. Action yang didukung: 'register', 'generate', 'status', 'checkin', 'del_user', 'list_key', 'del_key'.`
         });
     }
-    return res.status(200).json(result);
+    return res.status(200).json(response);
   } catch (error) {
-    console.error(`Error dalam action ${action}:`, error.message);
+    console.error(`[FATAL ERROR] Kegagalan pada action '${action}':`, error);
     return res.status(500).json({
-      success: false,
-      error: error.message,
-      action: action
+      error: error.message || "Terjadi kesalahan internal pada server."
     });
   }
 }

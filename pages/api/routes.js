@@ -585,6 +585,8 @@ export default function handler(req, res) {
     { path: "/api/ai/modelslab", name: "Modelslab", params: [{ "name": "prompt", "in": "query", "required": false }], },
     { path: "/api/ai/kelly", name: "Kelly", params: [{ "name": "prompt", "in": "query", "required": false }], },
     { path: "/api/ai/geminigen", name: "Geminigen", params: [{ "name": "prompt", "in": "query", "required": false }], },
+    { path: "/api/ai/emergent", name: "Emergent", params: [{ "name": "prompt", "in": "query", "required": false }], },
+    { path: "/api/ai/dreamface", name: "Dreamface", params: [{ "name": "prompt", "in": "query", "required": false }], },
     { path: "/api/anime/baca-komik/v1", name: "V1", params: [{ "name": "prompt", "in": "query", "required": false }], },
     { path: "/api/anime/baca-komik/v2", name: "V2", params: [{ "name": "prompt", "in": "query", "required": false }], },
     { path: "/api/anime/kiryuu/v1", name: "V1", params: [{ "name": "prompt", "in": "query", "required": false }], },

@@ -32,8 +32,8 @@ class PictifyConverter {
   }
   async convertHtmlToImageUrl({
     html,
-    width = 380,
-    height = 400,
+    width = 1280,
+    height = 1280,
     fileExtension = "png"
   }) {
     const payload = {
